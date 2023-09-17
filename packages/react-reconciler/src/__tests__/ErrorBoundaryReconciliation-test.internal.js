@@ -6,15 +6,17 @@ describe('ErrorBoundaryReconciliation', () => {
   let ReactFeatureFlags;
   let ReactTestRenderer;
   let span;
+  let act;
 
   beforeEach(() => {
     jest.resetModules();
 
     ReactFeatureFlags = require('shared/ReactFeatureFlags');
+
     ReactFeatureFlags.replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
     ReactTestRenderer = require('react-test-renderer');
     React = require('react');
-
+    act = require('internal-test-utils').act;
     DidCatchErrorBoundary = class extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
@@ -49,28 +51,28 @@ describe('ErrorBoundaryReconciliation', () => {
   });
 
   [true, false].forEach(isConcurrent => {
-    function sharedTest(ErrorBoundary, fallbackTagName) {
-      const renderer = ReactTestRenderer.create(
-        <ErrorBoundary fallbackTagName={fallbackTagName}>
-          <BrokenRender fail={false} />
-        </ErrorBoundary>,
-        {unstable_isConcurrent: isConcurrent},
-      );
-      if (isConcurrent) {
-        renderer.unstable_flushAll();
-      }
+    async function sharedTest(ErrorBoundary, fallbackTagName) {
+      let renderer;
+
+      await act(() => {
+        renderer = ReactTestRenderer.create(
+          <ErrorBoundary fallbackTagName={fallbackTagName}>
+            <BrokenRender fail={false} />
+          </ErrorBoundary>,
+          {unstable_isConcurrent: isConcurrent},
+        );
+      });
       expect(renderer).toMatchRenderedOutput(<span prop="BrokenRender" />);
 
-      expect(() => {
-        renderer.update(
-          <ErrorBoundary fallbackTagName={fallbackTagName}>
-            <BrokenRender fail={true} />
-          </ErrorBoundary>,
-        );
-        if (isConcurrent) {
-          renderer.unstable_flushAll();
-        }
-      }).toWarnDev(isConcurrent ? ['invalid', 'invalid'] : ['invalid']);
+      await expect(async () => {
+        await act(() => {
+          renderer.update(
+            <ErrorBoundary fallbackTagName={fallbackTagName}>
+              <BrokenRender fail={true} />
+            </ErrorBoundary>,
+          );
+        });
+      }).toErrorDev(isConcurrent ? ['invalid', 'invalid'] : ['invalid']);
       const Fallback = fallbackTagName;
       expect(renderer).toMatchRenderedOutput(<Fallback prop="ErrorBoundary" />);
     }

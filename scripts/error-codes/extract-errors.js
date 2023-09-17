@@ -1,102 +1,74 @@
-/**
- * Copyright (c) Facebook, Inc. and its affiliates.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
 'use strict';
 
-const babylon = require('babylon');
 const fs = require('fs');
 const path = require('path');
-const traverse = require('babel-traverse').default;
-const evalToString = require('../shared/evalToString');
-const invertObject = require('./invertObject');
+const {execSync} = require('child_process');
 
-const babylonOptions = {
-  sourceType: 'module',
-  // As a parser, babylon has its own options and we can't directly
-  // import/require a babel preset. It should be kept **the same** as
-  // the `babel-plugin-syntax-*` ones specified in
-  // https://github.com/facebook/fbjs/blob/master/packages/babel-preset-fbjs/configure.js
-  plugins: [
-    'classProperties',
-    'flow',
-    'jsx',
-    'trailingFunctionCommas',
-    'objectRestSpread',
-  ],
-};
-
-module.exports = function(opts) {
-  if (!opts || !('errorMapFilePath' in opts)) {
-    throw new Error(
-      'Missing options. Ensure you pass an object with `errorMapFilePath`.'
-    );
+async function main() {
+  const originalJSON = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../error-codes/codes.json'))
+  );
+  const existingMessages = new Set();
+  const codes = Object.keys(originalJSON);
+  let nextCode = 0;
+  for (let i = 0; i < codes.length; i++) {
+    const codeStr = codes[i];
+    const message = originalJSON[codeStr];
+    const code = parseInt(codeStr, 10);
+    existingMessages.add(message);
+    if (code >= nextCode) {
+      nextCode = code + 1;
+    }
   }
 
-  const errorMapFilePath = opts.errorMapFilePath;
-  let existingErrorMap;
+  console.log('Searching `build` directory for unminified errors...\n');
+
+  let out;
   try {
-    // Using `fs.readFileSync` instead of `require` here, because `require()`
-    // calls are cached, and the cache map is not properly invalidated after
-    // file changes.
-    existingErrorMap = JSON.parse(
-      fs.readFileSync(
-        path.join(__dirname, path.basename(errorMapFilePath)),
-        'utf8'
-      )
-    );
+    out = execSync(
+      "git --no-pager grep -n --untracked --no-exclude-standard '/*! <expected-error-format>' -- build"
+    ).toString();
   } catch (e) {
-    existingErrorMap = {};
+    if (e.status === 1 && e.stdout.toString() === '') {
+      // No unminified errors found.
+      return;
+    }
+    throw e;
   }
 
-  const allErrorIDs = Object.keys(existingErrorMap);
-  let currentID;
+  let newJSON = null;
+  const regex = /\<expected-error-format\>"(.+?)"\<\/expected-error-format\>/g;
+  do {
+    const match = regex.exec(out);
+    if (match === null) {
+      break;
+    } else {
+      const message = match[1].trim();
+      if (existingMessages.has(message)) {
+        // This probably means you ran the script twice.
+        continue;
+      }
+      existingMessages.add(message);
 
-  if (allErrorIDs.length === 0) {
-    // Map is empty
-    currentID = 0;
-  } else {
-    currentID = Math.max.apply(null, allErrorIDs) + 1;
-  }
+      // Add to json map
+      if (newJSON === null) {
+        newJSON = Object.assign({}, originalJSON);
+      }
+      console.log(`"${nextCode}": "${message}"`);
+      newJSON[nextCode] = message;
+      nextCode += 1;
+    }
+  } while (true);
 
-  // Here we invert the map object in memory for faster error code lookup
-  existingErrorMap = invertObject(existingErrorMap);
-
-  function transform(source) {
-    const ast = babylon.parse(source, babylonOptions);
-
-    traverse(ast, {
-      CallExpression: {
-        exit(astPath) {
-          if (astPath.get('callee').isIdentifier({name: 'invariant'})) {
-            const node = astPath.node;
-
-            // error messages can be concatenated (`+`) at runtime, so here's a
-            // trivial partial evaluator that interprets the literal value
-            const errorMsgLiteral = evalToString(node.arguments[1]);
-            if (existingErrorMap.hasOwnProperty(errorMsgLiteral)) {
-              return;
-            }
-
-            existingErrorMap[errorMsgLiteral] = '' + currentID++;
-          }
-        },
-      },
-    });
-  }
-
-  function flush(cb) {
+  if (newJSON) {
     fs.writeFileSync(
-      errorMapFilePath,
-      JSON.stringify(invertObject(existingErrorMap), null, 2) + '\n',
-      'utf-8'
+      path.resolve(__dirname, '../error-codes/codes.json'),
+      JSON.stringify(newJSON, null, 2)
     );
   }
+}
 
-  return function extractErrors(source) {
-    transform(source);
-    flush();
-  };
-};
+main().catch(error => {
+  console.error(error);
+  process.exit(1);
+});

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -12,15 +12,23 @@
 
 let React;
 let ReactNoop;
+let Scheduler;
+let waitForAll;
+let waitForThrow;
 
 describe('ReactIncrementalErrorLogging', () => {
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
     ReactNoop = require('react-noop-renderer');
+    Scheduler = require('scheduler');
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForAll = InternalTestUtils.waitForAll;
+    waitForThrow = InternalTestUtils.waitForThrow;
   });
 
-  // Note: in this test file we won't be using toWarnDev() matchers
+  // Note: in this test file we won't be using toErrorDev() matchers
   // because they filter out precisely the messages we want to test for.
   let oldConsoleError;
   beforeEach(() => {
@@ -33,7 +41,7 @@ describe('ReactIncrementalErrorLogging', () => {
     oldConsoleError = null;
   });
 
-  it('should log errors that occur during the begin phase', () => {
+  it('should log errors that occur during the begin phase', async () => {
     class ErrorThrowingComponent extends React.Component {
       constructor(props) {
         super(props);
@@ -50,16 +58,16 @@ describe('ReactIncrementalErrorLogging', () => {
         </span>
       </div>,
     );
-    expect(ReactNoop.flushDeferredPri).toThrowError('constructor error');
+    await waitForThrow('constructor error');
     expect(console.error).toHaveBeenCalledTimes(1);
     expect(console.error).toHaveBeenCalledWith(
       __DEV__
         ? expect.stringMatching(
             new RegExp(
               'The above error occurred in the <ErrorThrowingComponent> component:\n' +
-                '\\s+in ErrorThrowingComponent (.*)\n' +
-                '\\s+in span (.*)\n' +
-                '\\s+in div (.*)\n\n' +
+                '\\s+(in|at) ErrorThrowingComponent (.*)\n' +
+                '\\s+(in|at) span(.*)\n' +
+                '\\s+(in|at) div(.*)\n\n' +
                 'Consider adding an error boundary to your tree ' +
                 'to customize error handling behavior\\.',
             ),
@@ -70,7 +78,7 @@ describe('ReactIncrementalErrorLogging', () => {
     );
   });
 
-  it('should log errors that occur during the commit phase', () => {
+  it('should log errors that occur during the commit phase', async () => {
     class ErrorThrowingComponent extends React.Component {
       componentDidMount() {
         throw new Error('componentDidMount error');
@@ -86,16 +94,16 @@ describe('ReactIncrementalErrorLogging', () => {
         </span>
       </div>,
     );
-    expect(ReactNoop.flushDeferredPri).toThrowError('componentDidMount error');
+    await waitForThrow('componentDidMount error');
     expect(console.error).toHaveBeenCalledTimes(1);
     expect(console.error).toHaveBeenCalledWith(
       __DEV__
         ? expect.stringMatching(
             new RegExp(
               'The above error occurred in the <ErrorThrowingComponent> component:\n' +
-                '\\s+in ErrorThrowingComponent (.*)\n' +
-                '\\s+in span (.*)\n' +
-                '\\s+in div (.*)\n\n' +
+                '\\s+(in|at) ErrorThrowingComponent (.*)\n' +
+                '\\s+(in|at) span(.*)\n' +
+                '\\s+(in|at) div(.*)\n\n' +
                 'Consider adding an error boundary to your tree ' +
                 'to customize error handling behavior\\.',
             ),
@@ -106,7 +114,7 @@ describe('ReactIncrementalErrorLogging', () => {
     );
   });
 
-  it('should ignore errors thrown in log method to prevent cycle', () => {
+  it('should ignore errors thrown in log method to prevent cycle', async () => {
     const logCapturedErrorCalls = [];
     console.error.mockImplementation(error => {
       // Test what happens when logging itself is buggy.
@@ -125,16 +133,16 @@ describe('ReactIncrementalErrorLogging', () => {
         </span>
       </div>,
     );
-    expect(ReactNoop.flushDeferredPri).toThrow('render error');
+    await waitForThrow('render error');
     expect(logCapturedErrorCalls.length).toBe(1);
     expect(logCapturedErrorCalls[0]).toEqual(
       __DEV__
         ? expect.stringMatching(
             new RegExp(
               'The above error occurred in the <ErrorThrowingComponent> component:\n' +
-                '\\s+in ErrorThrowingComponent (.*)\n' +
-                '\\s+in span (.*)\n' +
-                '\\s+in div (.*)\n\n' +
+                '\\s+(in|at) ErrorThrowingComponent (.*)\n' +
+                '\\s+(in|at) span(.*)\n' +
+                '\\s+(in|at) div(.*)\n\n' +
                 'Consider adding an error boundary to your tree ' +
                 'to customize error handling behavior\\.',
             ),
@@ -149,7 +157,7 @@ describe('ReactIncrementalErrorLogging', () => {
     }).toThrow('logCapturedError error');
   });
 
-  it('resets instance variables before unmounting failed node', () => {
+  it('resets instance variables before unmounting failed node', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
@@ -165,10 +173,10 @@ describe('ReactIncrementalErrorLogging', () => {
         this.setState({step: 1});
       }
       componentWillUnmount() {
-        ReactNoop.yield('componentWillUnmount: ' + this.state.step);
+        Scheduler.log('componentWillUnmount: ' + this.state.step);
       }
       render() {
-        ReactNoop.yield('render: ' + this.state.step);
+        Scheduler.log('render: ' + this.state.step);
         if (this.state.step > 0) {
           throw new Error('oops');
         }
@@ -181,12 +189,17 @@ describe('ReactIncrementalErrorLogging', () => {
         <Foo />
       </ErrorBoundary>,
     );
-    expect(ReactNoop.flush()).toEqual(
+    await waitForAll(
       [
         'render: 0',
-        __DEV__ && 'render: 0', // replay
+
         'render: 1',
-        __DEV__ && 'render: 1', // replay
+        __DEV__ && 'render: 1', // replay due to invokeGuardedCallback
+
+        // Retry one more time before handling error
+        'render: 1',
+        __DEV__ && 'render: 1', // replay due to invokeGuardedCallback
+
         'componentWillUnmount: 0',
       ].filter(Boolean),
     );
@@ -197,8 +210,8 @@ describe('ReactIncrementalErrorLogging', () => {
         ? expect.stringMatching(
             new RegExp(
               'The above error occurred in the <Foo> component:\n' +
-                '\\s+in Foo (.*)\n' +
-                '\\s+in ErrorBoundary (.*)\n\n' +
+                '\\s+(in|at) Foo (.*)\n' +
+                '\\s+(in|at) ErrorBoundary (.*)\n\n' +
                 'React will try to recreate this component tree from scratch ' +
                 'using the error boundary you provided, ErrorBoundary.',
             ),

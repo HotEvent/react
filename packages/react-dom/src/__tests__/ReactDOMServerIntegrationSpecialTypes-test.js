@@ -1,10 +1,11 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
@@ -14,26 +15,28 @@ const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegratio
 let React;
 let ReactDOM;
 let ReactDOMServer;
+let ReactTestUtils;
 let forwardRef;
 let memo;
 let yieldedValues;
-let yieldValue;
-let clearYields;
+let log;
+let clearLog;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
   ReactDOM = require('react-dom');
   ReactDOMServer = require('react-dom/server');
+  ReactTestUtils = require('react-dom/test-utils');
   forwardRef = React.forwardRef;
   memo = React.memo;
 
   yieldedValues = [];
-  yieldValue = value => {
+  log = value => {
     yieldedValues.push(value);
   };
-  clearYields = () => {
+  clearLog = () => {
     const ret = yieldedValues;
     yieldedValues = [];
     return ret;
@@ -43,6 +46,7 @@ function initModules() {
   return {
     ReactDOM,
     ReactDOMServer,
+    ReactTestUtils,
   };
 }
 
@@ -73,9 +77,9 @@ describe('ReactDOMServerIntegration', () => {
 
   itRenders('a Profiler component and its children', async render => {
     const element = await render(
-      <React.unstable_Profiler id="profiler" onRender={jest.fn()}>
+      <React.Profiler id="profiler" onRender={jest.fn()}>
         <div>Test</div>
-      </React.unstable_Profiler>,
+      </React.Profiler>,
     );
     const parent = element.parentNode;
     const div = parent.childNodes[0];
@@ -89,7 +93,7 @@ describe('ReactDOMServerIntegration', () => {
     });
 
     function Text({text}) {
-      yieldValue(text);
+      log(text);
       return <span>{text}</span>;
     }
 
@@ -111,27 +115,25 @@ describe('ReactDOMServerIntegration', () => {
       ref.current = 0;
       await render(<MemoRefCounter ref={ref} />);
 
-      expect(clearYields()).toEqual(['Count: 0']);
+      expect(clearLog()).toEqual(['Count: 0']);
     });
 
     itRenders('with comparator', async render => {
       const MemoCounter = memo(Counter, (oldProps, newProps) => false);
       await render(<MemoCounter count={0} />);
-      expect(clearYields()).toEqual(['Count: 0']);
+      expect(clearLog()).toEqual(['Count: 0']);
     });
 
     itRenders(
       'comparator functions are not invoked on the server',
       async render => {
         const MemoCounter = React.memo(Counter, (oldProps, newProps) => {
-          yieldValue(
-            `Old count: ${oldProps.count}, New count: ${newProps.count}`,
-          );
+          log(`Old count: ${oldProps.count}, New count: ${newProps.count}`);
           return oldProps.count === newProps.count;
         });
 
         await render(<MemoCounter count={0} />);
-        expect(clearYields()).toEqual(['Count: 0']);
+        expect(clearLog()).toEqual(['Count: 0']);
       },
     );
   });

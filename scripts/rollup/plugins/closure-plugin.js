@@ -9,7 +9,7 @@ const writeFileAsync = promisify(fs.writeFile);
 function compile(flags) {
   return new Promise((resolve, reject) => {
     const closureCompiler = new ClosureCompiler(flags);
-    closureCompiler.run(function(exitCode, stdOut, stdErr) {
+    closureCompiler.run(function (exitCode, stdOut, stdErr) {
       if (!stdErr) {
         resolve(stdOut);
       } else {
@@ -22,7 +22,7 @@ function compile(flags) {
 module.exports = function closure(flags = {}) {
   return {
     name: 'scripts/rollup/plugins/closure-plugin',
-    async transformBundle(code) {
+    async renderChunk(code) {
       const inputFile = tmp.fileSync();
       const tempPath = inputFile.name;
       flags = Object.assign({}, flags, {js: tempPath});

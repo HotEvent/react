@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -48,14 +48,14 @@ describe('ReactCompositeComponent-state', () => {
 
       UNSAFE_componentWillMount() {
         this.peekAtState('componentWillMount-start');
-        this.setState(function(state) {
+        this.setState(function (state) {
           this.peekAtState('before-setState-sunrise', state);
         });
         this.setState(
           {color: 'sunrise'},
           this.peekAtCallback('setState-sunrise'),
         );
-        this.setState(function(state) {
+        this.setState(function (state) {
           this.peekAtState('after-setState-sunrise', state);
         });
         this.peekAtState('componentWillMount-after-sunrise');
@@ -63,7 +63,7 @@ describe('ReactCompositeComponent-state', () => {
           {color: 'orange'},
           this.peekAtCallback('setState-orange'),
         );
-        this.setState(function(state) {
+        this.setState(function (state) {
           this.peekAtState('after-setState-orange', state);
         });
         this.peekAtState('componentWillMount-end');
@@ -81,18 +81,18 @@ describe('ReactCompositeComponent-state', () => {
       UNSAFE_componentWillReceiveProps(newProps) {
         this.peekAtState('componentWillReceiveProps-start');
         if (newProps.nextColor) {
-          this.setState(function(state) {
+          this.setState(function (state) {
             this.peekAtState('before-setState-receiveProps', state);
             return {color: newProps.nextColor};
           });
           // No longer a public API, but we can test that it works internally by
           // reaching into the updater.
           this.updater.enqueueReplaceState(this, {color: undefined});
-          this.setState(function(state) {
+          this.setState(function (state) {
             this.peekAtState('before-setState-again-receiveProps', state);
             return {color: newProps.nextColor};
           }, this.peekAtCallback('setState-receiveProps'));
-          this.setState(function(state) {
+          this.setState(function (state) {
             this.peekAtState('after-setState-receiveProps', state);
           });
         }
@@ -143,7 +143,7 @@ describe('ReactCompositeComponent-state', () => {
 
     ReactDOM.unmountComponentAtNode(container);
 
-    let expected = [
+    const expected = [
       // there is no state when getInitialState() is called
       ['getInitialState', null],
       ['componentWillMount-start', 'red'],
@@ -283,8 +283,6 @@ describe('ReactCompositeComponent-state', () => {
   });
 
   it('should batch unmounts', () => {
-    let outer;
-
     class Inner extends React.Component {
       render() {
         return <div />;
@@ -306,13 +304,13 @@ describe('ReactCompositeComponent-state', () => {
     }
 
     const container = document.createElement('div');
-    outer = ReactDOM.render(<Outer />, container);
+    const outer = ReactDOM.render(<Outer />, container);
     expect(() => {
       ReactDOM.unmountComponentAtNode(container);
     }).not.toThrow();
   });
 
-  it('should update state when called from child cWRP', function() {
+  it('should update state when called from child cWRP', function () {
     const log = [];
     class Parent extends React.Component {
       state = {value: 'one'};
@@ -352,7 +350,7 @@ describe('ReactCompositeComponent-state', () => {
     ]);
   });
 
-  it('should merge state when sCU returns false', function() {
+  it('should merge state when sCU returns false', function () {
     const log = [];
     class Test extends React.Component {
       state = {a: 0};
@@ -380,7 +378,7 @@ describe('ReactCompositeComponent-state', () => {
   });
 
   it('should treat assigning to this.state inside cWRP as a replaceState, with a warning', () => {
-    let ops = [];
+    const ops = [];
     class Test extends React.Component {
       state = {step: 1, extra: true};
       UNSAFE_componentWillReceiveProps() {
@@ -406,11 +404,10 @@ describe('ReactCompositeComponent-state', () => {
     const container = document.createElement('div');
     ReactDOM.render(<Test />, container);
     // Update
-    expect(() => ReactDOM.render(<Test />, container)).toWarnDev(
+    expect(() => ReactDOM.render(<Test />, container)).toErrorDev(
       'Warning: Test.componentWillReceiveProps(): Assigning directly to ' +
         "this.state is deprecated (except inside a component's constructor). " +
         'Use setState instead.',
-      {withoutStack: true},
     );
 
     expect(ops).toEqual([
@@ -424,7 +421,7 @@ describe('ReactCompositeComponent-state', () => {
   });
 
   it('should treat assigning to this.state inside cWM as a replaceState, with a warning', () => {
-    let ops = [];
+    const ops = [];
     class Test extends React.Component {
       state = {step: 1, extra: true};
       UNSAFE_componentWillMount() {
@@ -448,11 +445,10 @@ describe('ReactCompositeComponent-state', () => {
 
     // Mount
     const container = document.createElement('div');
-    expect(() => ReactDOM.render(<Test />, container)).toWarnDev(
+    expect(() => ReactDOM.render(<Test />, container)).toErrorDev(
       'Warning: Test.componentWillMount(): Assigning directly to ' +
         "this.state is deprecated (except inside a component's constructor). " +
         'Use setState instead.',
-      {withoutStack: true},
     );
 
     expect(ops).toEqual([
@@ -461,49 +457,86 @@ describe('ReactCompositeComponent-state', () => {
     ]);
   });
 
-  it('should support stateful module pattern components', () => {
-    function Child() {
-      return {
-        state: {
-          count: 123,
-        },
-        render() {
-          return <div>{`count:${this.state.count}`}</div>;
-        },
+  if (!require('shared/ReactFeatureFlags').disableModulePatternComponents) {
+    it('should support stateful module pattern components', () => {
+      function Child() {
+        return {
+          state: {
+            count: 123,
+          },
+          render() {
+            return <div>{`count:${this.state.count}`}</div>;
+          },
+        };
+      }
+
+      const el = document.createElement('div');
+      expect(() => ReactDOM.render(<Child />, el)).toErrorDev(
+        'Warning: The <Child /> component appears to be a function component that returns a class instance. ' +
+          'Change Child to a class that extends React.Component instead. ' +
+          "If you can't use a class try assigning the prototype on the function as a workaround. " +
+          '`Child.prototype = React.Component.prototype`. ' +
+          "Don't use an arrow function since it cannot be called with `new` by React.",
+      );
+
+      expect(el.textContent).toBe('count:123');
+    });
+
+    it('should support getDerivedStateFromProps for module pattern components', () => {
+      function Child() {
+        return {
+          state: {
+            count: 1,
+          },
+          render() {
+            return <div>{`count:${this.state.count}`}</div>;
+          },
+        };
+      }
+      Child.getDerivedStateFromProps = (props, prevState) => {
+        return {
+          count: prevState.count + props.incrementBy,
+        };
       };
+
+      const el = document.createElement('div');
+      ReactDOM.render(<Child incrementBy={0} />, el);
+      expect(el.textContent).toBe('count:1');
+
+      ReactDOM.render(<Child incrementBy={2} />, el);
+      expect(el.textContent).toBe('count:3');
+
+      ReactDOM.render(<Child incrementBy={1} />, el);
+      expect(el.textContent).toBe('count:4');
+    });
+  }
+
+  it('should support setState in componentWillUnmount', () => {
+    let subscription;
+    class A extends React.Component {
+      componentWillUnmount() {
+        subscription();
+      }
+      render() {
+        return 'A';
+      }
+    }
+
+    class B extends React.Component {
+      state = {siblingUnmounted: false};
+      UNSAFE_componentWillMount() {
+        subscription = () => this.setState({siblingUnmounted: true});
+      }
+      render() {
+        return 'B' + (this.state.siblingUnmounted ? ' No Sibling' : '');
+      }
     }
 
     const el = document.createElement('div');
-    ReactDOM.render(<Child />, el);
+    ReactDOM.render(<A />, el);
+    expect(el.textContent).toBe('A');
 
-    expect(el.textContent).toBe('count:123');
-  });
-
-  it('should support getDerivedStateFromProps for module pattern components', () => {
-    function Child() {
-      return {
-        state: {
-          count: 1,
-        },
-        render() {
-          return <div>{`count:${this.state.count}`}</div>;
-        },
-      };
-    }
-    Child.getDerivedStateFromProps = (props, prevState) => {
-      return {
-        count: prevState.count + props.incrementBy,
-      };
-    };
-
-    const el = document.createElement('div');
-    ReactDOM.render(<Child incrementBy={0} />, el);
-    expect(el.textContent).toBe('count:1');
-
-    ReactDOM.render(<Child incrementBy={2} />, el);
-    expect(el.textContent).toBe('count:3');
-
-    ReactDOM.render(<Child incrementBy={1} />, el);
-    expect(el.textContent).toBe('count:4');
+    ReactDOM.render(<B />, el);
+    expect(el.textContent).toBe('B No Sibling');
   });
 });

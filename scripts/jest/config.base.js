@@ -1,9 +1,7 @@
 'use strict';
 
 module.exports = {
-  haste: {
-    hasteImplModulePath: require.resolve('./noHaste.js'),
-  },
+  globalSetup: require.resolve('./setupGlobal.js'),
   modulePathIgnorePatterns: [
     '<rootDir>/scripts/rollup/shims/',
     '<rootDir>/scripts/bench/',
@@ -12,12 +10,22 @@ module.exports = {
     '.*': require.resolve('./preprocessor.js'),
   },
   setupFiles: [require.resolve('./setupEnvironment.js')],
-  setupTestFrameworkScriptFile: require.resolve('./setupTests.js'),
+  setupFilesAfterEnv: [require.resolve('./setupTests.js')],
   // Only include files directly in __tests__, not in nested folders.
   testRegex: '/__tests__/[^/]*(\\.js|\\.coffee|[^d]\\.ts)$',
   moduleFileExtensions: ['js', 'json', 'node', 'coffee', 'ts'],
   rootDir: process.cwd(),
   roots: ['<rootDir>/packages', '<rootDir>/scripts'],
   collectCoverageFrom: ['packages/**/*.js'],
-  timers: 'fake',
+  fakeTimers: {
+    enableGlobally: true,
+    legacyFakeTimers: true,
+  },
+  snapshotSerializers: [require.resolve('jest-snapshot-serializer-raw')],
+
+  testSequencer: require.resolve('./jestSequencer'),
+
+  testEnvironment: 'jsdom',
+
+  testRunner: 'jest-circus/runner',
 };

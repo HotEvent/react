@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -18,6 +18,7 @@ describe('Component stack trace displaying', () => {
     ReactDOM = require('react-dom');
   });
 
+  // @gate !enableComponentStackLocations || !__DEV__
   it('should provide filenames in stack traces', () => {
     class Component extends React.Component {
       render() {
@@ -88,6 +89,7 @@ describe('Component stack trace displaying', () => {
       'C:\\funny long (path)/index.jsx': 'funny long (path)/index.jsx',
     };
     Object.keys(fileNames).forEach((fileName, i) => {
+      Component.displayName = 'Component ' + i;
       ReactDOM.render(
         <Component __source={{fileName, lineNumber: i}} />,
         container,
@@ -95,12 +97,14 @@ describe('Component stack trace displaying', () => {
     });
     if (__DEV__) {
       let i = 0;
-      expect(console.error.calls.count()).toBe(Object.keys(fileNames).length);
-      for (let fileName in fileNames) {
+      expect(console.error).toHaveBeenCalledTimes(
+        Object.keys(fileNames).length,
+      );
+      for (const fileName in fileNames) {
         if (!fileNames.hasOwnProperty(fileName)) {
           continue;
         }
-        const args = console.error.calls.argsFor(i);
+        const args = console.error.mock.calls[i];
         const stack = args[args.length - 1];
         const expected = fileNames[fileName];
         expect(stack).toContain(`at ${expected}:`);

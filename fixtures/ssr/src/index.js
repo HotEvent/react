@@ -1,6 +1,6 @@
 import React from 'react';
-import {hydrate} from 'react-dom';
+import {hydrateRoot} from 'react-dom/client';
 
 import App from './components/App';
 
-hydrate(<App assets={window.assetManifest} />, document);
+hydrateRoot(document, <App assets={window.assetManifest} />);

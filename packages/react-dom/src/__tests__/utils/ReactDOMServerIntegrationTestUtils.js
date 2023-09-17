@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -10,60 +10,94 @@
 'use strict';
 
 const stream = require('stream');
+const shouldIgnoreConsoleError = require('../../../../../scripts/jest/shouldIgnoreConsoleError');
 
-module.exports = function(initModules) {
+module.exports = function (initModules) {
   let ReactDOM;
   let ReactDOMServer;
+  let act;
 
   function resetModules() {
     ({ReactDOM, ReactDOMServer} = initModules());
+    act = require('internal-test-utils').act;
+  }
+
+  function shouldUseDocument(reactElement) {
+    // Used for whole document tests.
+    return reactElement && reactElement.type === 'html';
+  }
+
+  function getContainerFromMarkup(reactElement, markup) {
+    if (shouldUseDocument(reactElement)) {
+      const doc = document.implementation.createHTMLDocument('');
+      doc.open();
+      doc.write(
+        markup ||
+          '<!doctype html><html><meta charset=utf-8><title>test doc</title>',
+      );
+      doc.close();
+      return doc;
+    } else {
+      const container = document.createElement('div');
+      container.innerHTML = markup;
+      return container;
+    }
   }
 
   // Helper functions for rendering tests
   // ====================================
 
   // promisified version of ReactDOM.render()
-  function asyncReactDOMRender(reactElement, domElement, forceHydrate) {
-    return new Promise(resolve => {
-      if (forceHydrate) {
+  async function asyncReactDOMRender(reactElement, domElement, forceHydrate) {
+    if (forceHydrate) {
+      await act(() => {
         ReactDOM.hydrate(reactElement, domElement);
-      } else {
+      });
+    } else {
+      await act(() => {
         ReactDOM.render(reactElement, domElement);
-      }
-      // We can't use the callback for resolution because that will not catch
-      // errors. They're thrown.
-      resolve();
-    });
+      });
+    }
   }
   // performs fn asynchronously and expects count errors logged to console.error.
   // will fail the test if the count of errors logged is not equal to count.
   async function expectErrors(fn, count) {
-    if (console.error.calls && console.error.calls.reset) {
-      console.error.calls.reset();
+    if (console.error.mockClear) {
+      console.error.mockClear();
     } else {
       // TODO: Rewrite tests that use this helper to enumerate expected errors.
-      // This will enable the helper to use the .toWarnDev() matcher instead of spying.
-      spyOnDev(console, 'error');
+      // This will enable the helper to use the .toErrorDev() matcher instead of spying.
+      spyOnDev(console, 'error').mockImplementation(() => {});
     }
 
     const result = await fn();
     if (
-      console.error.calls &&
-      console.error.calls.count() !== count &&
-      console.error.calls.count() !== 0
+      console.error.mock &&
+      console.error.mock.calls &&
+      console.error.mock.calls.length !== 0
     ) {
-      console.log(
-        `We expected ${count} warning(s), but saw ${console.error.calls.count()} warning(s).`,
-      );
-      if (console.error.calls.count() > 0) {
-        console.log(`We saw these warnings:`);
-        for (let i = 0; i < console.error.calls.count(); i++) {
-          console.log(...console.error.calls.argsFor(i));
+      const filteredWarnings = [];
+      for (let i = 0; i < console.error.mock.calls.length; i++) {
+        const args = console.error.mock.calls[i];
+        const [format, ...rest] = args;
+        if (!shouldIgnoreConsoleError(format, rest)) {
+          filteredWarnings.push(args);
         }
       }
-    }
-    if (__DEV__) {
-      expect(console.error).toHaveBeenCalledTimes(count);
+      if (filteredWarnings.length !== count) {
+        console.log(
+          `We expected ${count} warning(s), but saw ${filteredWarnings.length} warning(s).`,
+        );
+        if (filteredWarnings.length > 0) {
+          console.log(`We saw these warnings:`);
+          for (let i = 0; i < filteredWarnings.length; i++) {
+            console.log(...filteredWarnings[i]);
+          }
+        }
+        if (__DEV__) {
+          expect(console.error).toHaveBeenCalledTimes(count);
+        }
+      }
     }
     return result;
   }
@@ -97,9 +131,7 @@ module.exports = function(initModules) {
   // Does not render on client or perform client-side revival.
   async function serverRender(reactElement, errorCount = 0) {
     const markup = await renderIntoString(reactElement, errorCount);
-    const domElement = document.createElement('div');
-    domElement.innerHTML = markup;
-    return domElement.firstChild;
+    return getContainerFromMarkup(reactElement, markup).firstChild;
   }
 
   // this just drains a readable piped into it to a string, which can be accessed
@@ -119,9 +151,14 @@ module.exports = function(initModules) {
   async function renderIntoStream(reactElement, errorCount = 0) {
     return await expectErrors(
       () =>
-        new Promise(resolve => {
-          let writable = new DrainWritable();
-          ReactDOMServer.renderToNodeStream(reactElement).pipe(writable);
+        new Promise((resolve, reject) => {
+          const writable = new DrainWritable();
+          const s = ReactDOMServer.renderToPipeableStream(reactElement, {
+            onShellError(e) {
+              reject(e);
+            },
+          });
+          s.pipe(writable);
           writable.on('finish', () => resolve(writable.buffer));
         }),
       errorCount,
@@ -133,27 +170,33 @@ module.exports = function(initModules) {
   // Does not render on client or perform client-side revival.
   async function streamRender(reactElement, errorCount = 0) {
     const markup = await renderIntoStream(reactElement, errorCount);
-    const domElement = document.createElement('div');
-    domElement.innerHTML = markup;
-    return domElement.firstChild;
+    let firstNode = getContainerFromMarkup(reactElement, markup).firstChild;
+    if (firstNode && firstNode.nodeType === Node.DOCUMENT_TYPE_NODE) {
+      // Skip document type nodes.
+      firstNode = firstNode.nextSibling;
+    }
+    return firstNode;
   }
 
   const clientCleanRender = (element, errorCount = 0) => {
-    const div = document.createElement('div');
-    return renderIntoDom(element, div, false, errorCount);
+    if (shouldUseDocument(element)) {
+      // Documents can't be rendered from scratch.
+      return clientRenderOnServerString(element, errorCount);
+    }
+    const container = document.createElement('div');
+    return renderIntoDom(element, container, false, errorCount);
   };
 
   const clientRenderOnServerString = async (element, errorCount = 0) => {
     const markup = await renderIntoString(element, errorCount);
     resetModules();
 
-    const domElement = document.createElement('div');
-    domElement.innerHTML = markup;
-    let serverNode = domElement.firstChild;
+    const container = getContainerFromMarkup(element, markup);
+    let serverNode = container.firstChild;
 
     const firstClientNode = await renderIntoDom(
       element,
-      domElement,
+      container,
       true,
       errorCount,
     );
@@ -178,19 +221,37 @@ module.exports = function(initModules) {
 
   const clientRenderOnBadMarkup = async (element, errorCount = 0) => {
     // First we render the top of bad mark up.
-    const domElement = document.createElement('div');
-    domElement.innerHTML =
-      '<div id="badIdWhichWillCauseMismatch" data-reactroot="" data-reactid="1"></div>';
-    await renderIntoDom(element, domElement, true, errorCount + 1);
+
+    const container = getContainerFromMarkup(
+      element,
+      shouldUseDocument(element)
+        ? '<html><body><div id="badIdWhichWillCauseMismatch" /></body></html>'
+        : '<div id="badIdWhichWillCauseMismatch"></div>',
+    );
+
+    await renderIntoDom(element, container, true, errorCount + 1);
 
     // This gives us the resulting text content.
-    const hydratedTextContent = domElement.textContent;
+    const hydratedTextContent =
+      container.lastChild && container.lastChild.textContent;
 
     // Next we render the element into a clean DOM node client side.
-    const cleanDomElement = document.createElement('div');
-    await asyncReactDOMRender(element, cleanDomElement, true);
+    let cleanContainer;
+    if (shouldUseDocument(element)) {
+      // We can't render into a document during a clean render,
+      // so instead, we'll render the children into the document element.
+      cleanContainer = getContainerFromMarkup(
+        element,
+        '<html></html>',
+      ).documentElement;
+      element = element.props.children;
+    } else {
+      cleanContainer = document.createElement('div');
+    }
+    await asyncReactDOMRender(element, cleanContainer, true);
     // This gives us the expected text content.
-    const cleanTextContent = cleanDomElement.textContent;
+    const cleanTextContent =
+      (cleanContainer.lastChild && cleanContainer.lastChild.textContent) || '';
 
     // The only guarantee is that text content has been patched up if needed.
     expect(hydratedTextContent).toBe(cleanTextContent);
@@ -320,6 +381,7 @@ module.exports = function(initModules) {
     asyncReactDOMRender,
     serverRender,
     clientCleanRender,
+    clientRenderOnBadMarkup,
     clientRenderOnServerString,
     renderIntoDom,
     streamRender,

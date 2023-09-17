@@ -1,11 +1,9 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
-import warningWithoutStack from 'shared/warningWithoutStack';
 
 const didWarnStateUpdateForUnmountedComponent = {};
 
@@ -19,8 +17,7 @@ function warnNoop(publicInstance, callerName) {
     if (didWarnStateUpdateForUnmountedComponent[warningKey]) {
       return;
     }
-    warningWithoutStack(
-      false,
+    console.error(
       "Can't call %s on a component that is not yet mounted. " +
         'This is a no-op, but it might indicate a bug in your application. ' +
         'Instead, assign to `this.state` directly or define a `state = {};` ' +
@@ -43,7 +40,7 @@ const ReactNoopUpdateQueue = {
    * @protected
    * @final
    */
-  isMounted: function(publicInstance) {
+  isMounted: function (publicInstance) {
     return false;
   },
 
@@ -62,7 +59,7 @@ const ReactNoopUpdateQueue = {
    * @param {?string} callerName name of the calling function in the public API.
    * @internal
    */
-  enqueueForceUpdate: function(publicInstance, callback, callerName) {
+  enqueueForceUpdate: function (publicInstance, callback, callerName) {
     warnNoop(publicInstance, 'forceUpdate');
   },
 
@@ -79,7 +76,7 @@ const ReactNoopUpdateQueue = {
    * @param {?string} callerName name of the calling function in the public API.
    * @internal
    */
-  enqueueReplaceState: function(
+  enqueueReplaceState: function (
     publicInstance,
     completeState,
     callback,
@@ -100,7 +97,7 @@ const ReactNoopUpdateQueue = {
    * @param {?string} Name of the calling function in the public API.
    * @internal
    */
-  enqueueSetState: function(
+  enqueueSetState: function (
     publicInstance,
     partialState,
     callback,

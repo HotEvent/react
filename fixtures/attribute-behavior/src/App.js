@@ -213,6 +213,9 @@ function getCanonicalizedValue(value) {
 
 let _didWarn = false;
 function warn(str) {
+  if (str.includes('ReactDOM.render is no longer supported')) {
+    return;
+  }
   _didWarn = true;
 }
 const UNKNOWN_HTML_TAGS = new Set(['keygen', 'time', 'command']);
@@ -234,6 +237,8 @@ function getRenderedAttributeValue(
       return document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     } else if (containerTagName === 'document') {
       return document.implementation.createHTMLDocument('');
+    } else if (containerTagName === 'head') {
+      return document.implementation.createHTMLDocument('').head;
     } else {
       return document.createElement(containerTagName);
     }
@@ -279,12 +284,12 @@ function getRenderedAttributeValue(
   try {
     let container = createContainer();
     renderer.render(react.createElement(tagName, baseProps), container);
-    defaultValue = read(container.firstChild);
+    defaultValue = read(container.lastChild);
     canonicalDefaultValue = getCanonicalizedValue(defaultValue);
 
     container = createContainer();
     renderer.render(react.createElement(tagName, props), container);
-    result = read(container.firstChild);
+    result = read(container.lastChild);
     canonicalResult = getCanonicalizedValue(result);
     didWarn = _didWarn;
     didError = false;
@@ -300,6 +305,12 @@ function getRenderedAttributeValue(
   try {
     let container;
     if (containerTagName === 'document') {
+      const html = serverRenderer.renderToString(
+        react.createElement(tagName, props)
+      );
+      container = createContainer();
+      container.innerHTML = html;
+    } else if (containerTagName === 'head') {
       const html = serverRenderer.renderToString(
         react.createElement(tagName, props)
       );
@@ -461,9 +472,7 @@ function prepareState(initGlobals) {
       hasSameBehaviorForAll,
       rowPatternHash,
       // "Good enough" id that we can store in localStorage
-      rowIdHash: `${attribute.name} ${attribute.tagName} ${
-        attribute.overrideStringValue
-      }`,
+      rowIdHash: `${attribute.name} ${attribute.tagName} ${attribute.overrideStringValue}`,
     };
     const rowGroup = rowPatternHashes.get(rowPatternHash) || new Set();
     rowGroup.add(row);
@@ -527,7 +536,7 @@ function ResultPopover(props) {
     <pre
       css={{
         padding: '1em',
-        width: '25em',
+        minWidth: '25em',
       }}>
       {JSON.stringify(
         {
@@ -725,9 +734,9 @@ class App extends React.Component {
     rowPatternHashes: null,
   };
 
-  renderCell = props => {
+  renderCell = ({key, ...props}) => {
     return (
-      <div style={props.style}>
+      <div key={key} style={props.style}>
         <CellContent
           toggleAttribute={this.toggleAttribute}
           completedHashes={this.state.completedHashes}
@@ -763,10 +772,10 @@ class App extends React.Component {
       ReactDOMStable:
         'https://unpkg.com/react-dom@latest/umd/react-dom.development.js',
       ReactDOMServerStable:
-        'https://unpkg.com/react-dom@latest/umd/react-dom-server.browser.development.js',
+        'https://unpkg.com/react-dom@latest/umd/react-dom-server-legacy.browser.development.js',
       ReactNext: '/react.development.js',
       ReactDOMNext: '/react-dom.development.js',
-      ReactDOMServerNext: '/react-dom-server.browser.development.js',
+      ReactDOMServerNext: '/react-dom-server-legacy.browser.development.js',
     };
     const codePromises = Object.values(sources).map(src =>
       fetch(src).then(res => res.text())
@@ -866,14 +875,12 @@ class App extends React.Component {
     // Sort
     switch (sortOrder) {
       case ALPHABETICAL:
-        return filteredAttributes.sort(
-          (attr1, attr2) =>
-            attr1.name.toLowerCase() < attr2.name.toLowerCase() ? -1 : 1
+        return filteredAttributes.sort((attr1, attr2) =>
+          attr1.name.toLowerCase() < attr2.name.toLowerCase() ? -1 : 1
         );
       case REV_ALPHABETICAL:
-        return filteredAttributes.sort(
-          (attr1, attr2) =>
-            attr1.name.toLowerCase() < attr2.name.toLowerCase() ? 1 : -1
+        return filteredAttributes.sort((attr1, attr2) =>
+          attr1.name.toLowerCase() < attr2.name.toLowerCase() ? 1 : -1
         );
       case GROUPED_BY_ROW_PATTERN: {
         return filteredAttributes.sort((attr1, attr2) => {
@@ -903,8 +910,9 @@ class App extends React.Component {
 
     let log = '';
     for (let attribute of attributes) {
-      log += `## \`${attribute.name}\` (on \`<${attribute.tagName ||
-        'div'}>\` inside \`<${attribute.containerTagName || 'div'}>\`)\n`;
+      log += `## \`${attribute.name}\` (on \`<${
+        attribute.tagName || 'div'
+      }>\` inside \`<${attribute.containerTagName || 'div'}>\`)\n`;
       log += '| Test Case | Flags | Result |\n';
       log += '| --- | --- | --- |\n';
 

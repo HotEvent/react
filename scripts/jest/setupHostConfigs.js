@@ -1,31 +1,140 @@
 'use strict';
 
+const fs = require('fs');
+const nodePath = require('path');
 const inlinedHostConfigs = require('../shared/inlinedHostConfigs');
+
+function resolveEntryFork(resolvedEntry, isFBBundle) {
+  // Pick which entry point fork to use:
+  // .modern.fb.js
+  // .classic.fb.js
+  // .fb.js
+  // .stable.js
+  // .experimental.js
+  // .js
+
+  if (isFBBundle) {
+    if (__EXPERIMENTAL__) {
+      // We can't currently use the true modern entry point because too many tests fail.
+      // TODO: Fix tests to not use ReactDOM.render or gate them. Then we can remove this.
+      return resolvedEntry;
+    }
+    const resolvedFBEntry = resolvedEntry.replace(
+      '.js',
+      __EXPERIMENTAL__ ? '.modern.fb.js' : '.classic.fb.js'
+    );
+    if (fs.existsSync(resolvedFBEntry)) {
+      return resolvedFBEntry;
+    }
+    const resolvedGenericFBEntry = resolvedEntry.replace('.js', '.fb.js');
+    if (fs.existsSync(resolvedGenericFBEntry)) {
+      return resolvedGenericFBEntry;
+    }
+    // Even if it's a FB bundle we fallthrough to pick stable or experimental if we don't have an FB fork.
+  }
+  const resolvedForkedEntry = resolvedEntry.replace(
+    '.js',
+    __EXPERIMENTAL__ ? '.experimental.js' : '.stable.js'
+  );
+  if (fs.existsSync(resolvedForkedEntry)) {
+    return resolvedForkedEntry;
+  }
+  // Just use the plain .js one.
+  return resolvedEntry;
+}
+
+jest.mock('react', () => {
+  const resolvedEntryPoint = resolveEntryFork(
+    require.resolve('react'),
+    global.__WWW__
+  );
+  return jest.requireActual(resolvedEntryPoint);
+});
+
+jest.mock('react/react.shared-subset', () => {
+  const resolvedEntryPoint = resolveEntryFork(
+    require.resolve('react/src/ReactSharedSubset'),
+    global.__WWW__
+  );
+  return jest.requireActual(resolvedEntryPoint);
+});
 
 // When testing the custom renderer code path through `react-reconciler`,
 // turn the export into a function, and use the argument as host config.
-const shimHostConfigPath = 'react-reconciler/src/ReactFiberHostConfig';
+const shimHostConfigPath = 'react-reconciler/src/ReactFiberConfig';
 jest.mock('react-reconciler', () => {
   return config => {
     jest.mock(shimHostConfigPath, () => config);
-    return require.requireActual('react-reconciler');
+    return jest.requireActual('react-reconciler');
   };
 });
-jest.mock('react-reconciler/persistent', () => {
+const shimServerStreamConfigPath = 'react-server/src/ReactServerStreamConfig';
+const shimServerConfigPath = 'react-server/src/ReactFizzConfig';
+const shimFlightServerConfigPath = 'react-server/src/ReactFlightServerConfig';
+jest.mock('react-server', () => {
   return config => {
-    jest.mock(shimHostConfigPath, () => config);
-    return require.requireActual('react-reconciler/persistent');
+    jest.mock(shimServerStreamConfigPath, () => config);
+    jest.mock(shimServerConfigPath, () => config);
+    return jest.requireActual('react-server');
   };
 });
-const shimFizzHostConfigPath = 'react-stream/src/ReactFizzHostConfig';
-const shimFizzFormatConfigPath = 'react-stream/src/ReactFizzFormatConfig';
-jest.mock('react-stream', () => {
+jest.mock('react-server/flight', () => {
   return config => {
-    jest.mock(shimFizzHostConfigPath, () => config);
-    jest.mock(shimFizzFormatConfigPath, () => config);
-    return require.requireActual('react-stream');
+    jest.mock(shimServerStreamConfigPath, () => config);
+    jest.mock(shimServerConfigPath, () => config);
+    jest.mock('react-server/src/ReactFlightServerConfigBundlerCustom', () => ({
+      isClientReference: config.isClientReference,
+      isServerReference: config.isServerReference,
+      getClientReferenceKey: config.getClientReferenceKey,
+      resolveClientReferenceMetadata: config.resolveClientReferenceMetadata,
+    }));
+    jest.mock(shimFlightServerConfigPath, () =>
+      jest.requireActual(
+        'react-server/src/forks/ReactFlightServerConfig.custom'
+      )
+    );
+    return jest.requireActual('react-server/flight');
   };
 });
+const shimFlightClientConfigPath = 'react-client/src/ReactFlightClientConfig';
+jest.mock('react-client/flight', () => {
+  return config => {
+    jest.mock(shimFlightClientConfigPath, () => config);
+    return jest.requireActual('react-client/flight');
+  };
+});
+
+const configPaths = [
+  'react-reconciler/src/ReactFiberConfig',
+  'react-client/src/ReactFlightClientConfig',
+  'react-server/src/ReactServerStreamConfig',
+  'react-server/src/ReactFizzConfig',
+  'react-server/src/ReactFlightServerConfig',
+];
+
+function mockAllConfigs(rendererInfo) {
+  configPaths.forEach(path => {
+    // We want the reconciler to pick up the host config for this renderer.
+    jest.mock(path, () => {
+      let idx = path.lastIndexOf('/');
+      let forkPath = path.slice(0, idx) + '/forks' + path.slice(idx);
+      let parts = rendererInfo.shortName.split('-');
+      while (parts.length) {
+        try {
+          const candidate = `${forkPath}.${parts.join('-')}.js`;
+          fs.statSync(nodePath.join(process.cwd(), 'packages', candidate));
+          return jest.requireActual(candidate);
+        } catch (error) {
+          // try without a part
+        }
+        parts.pop();
+      }
+      throw new Error(
+        `Expected to find a fork for ${path} but did not find one.`
+      );
+    });
+  });
+}
 
 // But for inlined host configs (such as React DOM, Native, etc), we
 // mock their named entry points to establish a host config mapping.
@@ -35,79 +144,28 @@ inlinedHostConfigs.forEach(rendererInfo => {
     // Instead, it's handled by the generic `react-reconciler` entry point above.
     return;
   }
-  jest.mock(`react-reconciler/inline.${rendererInfo.shortName}`, () => {
-    let hasImportedShimmedConfig = false;
-
-    // We want the reconciler to pick up the host config for this renderer.
-    jest.mock(shimHostConfigPath, () => {
-      hasImportedShimmedConfig = true;
-      return require.requireActual(
-        `react-reconciler/src/forks/ReactFiberHostConfig.${
-          rendererInfo.shortName
-        }.js`
+  rendererInfo.entryPoints.forEach(entryPoint => {
+    jest.mock(entryPoint, () => {
+      mockAllConfigs(rendererInfo);
+      const resolvedEntryPoint = resolveEntryFork(
+        require.resolve(entryPoint),
+        global.__WWW__
       );
+      return jest.requireActual(resolvedEntryPoint);
     });
-
-    const renderer = require.requireActual('react-reconciler');
-    // If the shimmed config factory function above has not run,
-    // it means this test file loads more than one renderer
-    // but doesn't reset modules between them. This won't work.
-    if (!hasImportedShimmedConfig) {
-      throw new Error(
-        `Could not import the "${rendererInfo.shortName}" renderer ` +
-          `in this suite because another renderer has already been ` +
-          `loaded earlier. Call jest.resetModules() before importing any ` +
-          `of the following entry points:\n\n` +
-          rendererInfo.entryPoints.map(entry => `  * ${entry}`)
-      );
-    }
-
-    return renderer;
   });
-
-  if (rendererInfo.isFizzSupported) {
-    jest.mock(`react-stream/inline.${rendererInfo.shortName}`, () => {
-      let hasImportedShimmedConfig = false;
-
-      // We want the renderer to pick up the host config for this renderer.
-      jest.mock(shimFizzHostConfigPath, () => {
-        hasImportedShimmedConfig = true;
-        return require.requireActual(
-          `react-stream/src/forks/ReactFizzHostConfig.${
-            rendererInfo.shortName
-          }.js`
-        );
-      });
-      jest.mock(shimFizzFormatConfigPath, () => {
-        hasImportedShimmedConfig = true;
-        return require.requireActual(
-          `react-stream/src/forks/ReactFizzFormatConfig.${
-            rendererInfo.shortName
-          }.js`
-        );
-      });
-
-      const renderer = require.requireActual('react-stream');
-      // If the shimmed config factory function above has not run,
-      // it means this test file loads more than one renderer
-      // but doesn't reset modules between them. This won't work.
-      if (!hasImportedShimmedConfig) {
-        throw new Error(
-          `Could not import the "${rendererInfo.shortName}" renderer ` +
-            `in this suite because another renderer has already been ` +
-            `loaded earlier. Call jest.resetModules() before importing any ` +
-            `of the following entry points:\n\n` +
-            rendererInfo.entryPoints.map(entry => `  * ${entry}`)
-        );
-      }
-
-      return renderer;
-    });
-  }
 });
 
 // Make it possible to import this module inside
 // the React package itself.
 jest.mock('shared/ReactSharedInternals', () =>
-  require.requireActual('react/src/ReactSharedInternals')
+  jest.requireActual('react/src/ReactSharedInternals')
 );
+
+// Make it possible to import this module inside
+// the ReactDOM package itself.
+jest.mock('shared/ReactDOMSharedInternals', () =>
+  jest.requireActual('react-dom/src/ReactDOMSharedInternals')
+);
+
+jest.mock('scheduler', () => jest.requireActual('scheduler/unstable_mock'));

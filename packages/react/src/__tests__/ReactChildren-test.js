@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -21,7 +21,7 @@ describe('ReactChildren', () => {
 
   it('should support identity for simple', () => {
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid, index) {
+    const callback = jest.fn().mockImplementation(function (kid, index) {
       expect(this).toBe(context);
       return kid;
     });
@@ -46,7 +46,7 @@ describe('ReactChildren', () => {
 
   it('should support Portal components', () => {
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid, index) {
+    const callback = jest.fn().mockImplementation(function (kid, index) {
       expect(this).toBe(context);
       return kid;
     });
@@ -71,7 +71,7 @@ describe('ReactChildren', () => {
 
   it('should treat single arrayless child as being in array', () => {
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid, index) {
+    const callback = jest.fn().mockImplementation(function (kid, index) {
       expect(this).toBe(context);
       return kid;
     });
@@ -92,7 +92,7 @@ describe('ReactChildren', () => {
 
   it('should treat single child in array as expected', () => {
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid, index) {
+    const callback = jest.fn().mockImplementation(function (kid, index) {
       expect(this).toBe(context);
       return kid;
     });
@@ -119,7 +119,7 @@ describe('ReactChildren', () => {
     const four = <div key="keyFour" />;
     const context = {};
 
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       expect(this).toBe(context);
       return kid;
     });
@@ -165,7 +165,7 @@ describe('ReactChildren', () => {
     const a = <a key="aNode" />;
 
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       expect(this).toBe(context);
       return kid;
     });
@@ -225,7 +225,7 @@ describe('ReactChildren', () => {
     const five = <div key="keyFive" />;
 
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       return kid;
     });
 
@@ -263,7 +263,7 @@ describe('ReactChildren', () => {
     const zeroForceKey = <div key="keyZero" />;
     const oneForceKey = <div key="keyOne" />;
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       expect(this).toBe(context);
       return kid;
     });
@@ -298,10 +298,10 @@ describe('ReactChildren', () => {
 
   it('should be called for each child in an iterable without keys', () => {
     const threeDivIterable = {
-      '@@iterator': function() {
+      '@@iterator': function () {
         let i = 0;
         return {
-          next: function() {
+          next: function () {
             if (i++ < 3) {
               return {value: <div />, done: false};
             } else {
@@ -313,13 +313,13 @@ describe('ReactChildren', () => {
     };
 
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       expect(this).toBe(context);
       return kid;
     });
 
     let instance;
-    expect(() => (instance = <div>{threeDivIterable}</div>)).toWarnDev(
+    expect(() => (instance = <div>{threeDivIterable}</div>)).toErrorDev(
       'Warning: Each child in a list should have a unique "key" prop.',
     );
 
@@ -349,10 +349,10 @@ describe('ReactChildren', () => {
 
   it('should be called for each child in an iterable with keys', () => {
     const threeDivIterable = {
-      '@@iterator': function() {
+      '@@iterator': function () {
         let i = 0;
         return {
-          next: function() {
+          next: function () {
             if (i++ < 3) {
               return {value: <div key={'#' + i} />, done: false};
             } else {
@@ -364,7 +364,7 @@ describe('ReactChildren', () => {
     };
 
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       expect(this).toBe(context);
       return kid;
     });
@@ -397,7 +397,7 @@ describe('ReactChildren', () => {
 
   it('should not enumerate enumerable numbers (#4776)', () => {
     /*eslint-disable no-extend-native */
-    Number.prototype['@@iterator'] = function() {
+    Number.prototype['@@iterator'] = function () {
       throw new Error('number iterator called');
     };
     /*eslint-enable no-extend-native */
@@ -412,12 +412,12 @@ describe('ReactChildren', () => {
       );
 
       const context = {};
-      const callback = jest.fn().mockImplementation(function(kid) {
+      const callback = jest.fn().mockImplementation(function (kid) {
         expect(this).toBe(context);
         return kid;
       });
 
-      const assertCalls = function() {
+      const assertCalls = function () {
         expect(callback).toHaveBeenCalledTimes(3);
         expect(callback).toHaveBeenCalledWith(5, 0);
         expect(callback).toHaveBeenCalledWith(12, 1);
@@ -454,13 +454,13 @@ describe('ReactChildren', () => {
     );
 
     const context = {};
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       expect(this).toBe(context);
       return kid;
     });
 
     function assertCalls() {
-      expect(callback).toHaveBeenCalledTimes(2, 0);
+      expect(callback).toHaveBeenCalledTimes(2);
       expect(callback).toHaveBeenCalledWith('a', 0);
       expect(callback).toHaveBeenCalledWith(13, 1);
       callback.mockClear();
@@ -482,7 +482,7 @@ describe('ReactChildren', () => {
   });
 
   it('should pass key to returned component', () => {
-    const mapFn = function(kid, index) {
+    const mapFn = function (kid, index) {
       return <div>{kid}</div>;
     };
 
@@ -499,7 +499,7 @@ describe('ReactChildren', () => {
 
   it('should invoke callback with the right context', () => {
     let lastContext;
-    const callback = function(kid, index) {
+    const callback = function (kid, index) {
       lastContext = this;
       return this;
     };
@@ -536,7 +536,7 @@ describe('ReactChildren', () => {
       <span />, // Map from null to something.
       <div key="keyFour" />,
     ];
-    const callback = jest.fn().mockImplementation(function(kid, index) {
+    const callback = jest.fn().mockImplementation(function (kid, index) {
       return mapped[index];
     });
 
@@ -597,7 +597,7 @@ describe('ReactChildren', () => {
     const fourMapped = <div key="keyFour" />;
     const fiveMapped = <div />;
 
-    const callback = jest.fn().mockImplementation(function(kid) {
+    const callback = jest.fn().mockImplementation(function (kid) {
       switch (kid) {
         case zero:
           return zeroMapped;
@@ -666,7 +666,7 @@ describe('ReactChildren', () => {
     // Key should be added even if we don't supply it!
     const oneForceKeyMapped = <div />;
 
-    const mapFn = function(kid, index) {
+    const mapFn = function (kid, index) {
       return index === 0 ? zeroForceKeyMapped : oneForceKeyMapped;
     };
 
@@ -702,7 +702,7 @@ describe('ReactChildren', () => {
     const zero = <div />;
     const one = <div key="0" />;
 
-    const mapFn = function() {
+    const mapFn = function () {
       return null;
     };
 
@@ -713,7 +713,7 @@ describe('ReactChildren', () => {
       </div>
     );
 
-    expect(function() {
+    expect(function () {
       React.Children.map(instance.props.children, mapFn);
     }).not.toThrow();
   });
@@ -866,9 +866,77 @@ describe('ReactChildren', () => {
     ]);
   });
 
+  it('should combine keys when map returns an array', () => {
+    const instance = (
+      <div>
+        <div key="a" />
+        {false}
+        <div key="b" />
+        <p />
+      </div>
+    );
+    const mappedChildren = React.Children.map(
+      instance.props.children,
+      // Try a few things: keyed, unkeyed, hole, and a cloned element.
+      kid => [
+        <span key="x" />,
+        null,
+        <span key="y" />,
+        kid,
+        kid && React.cloneElement(kid, {key: 'z'}),
+        <hr />,
+      ],
+    );
+    expect(mappedChildren.length).toBe(18);
+
+    // <div key="a">
+    expect(mappedChildren[0].type).toBe('span');
+    expect(mappedChildren[0].key).toBe('.$a/.$x');
+    expect(mappedChildren[1].type).toBe('span');
+    expect(mappedChildren[1].key).toBe('.$a/.$y');
+    expect(mappedChildren[2].type).toBe('div');
+    expect(mappedChildren[2].key).toBe('.$a/.$a');
+    expect(mappedChildren[3].type).toBe('div');
+    expect(mappedChildren[3].key).toBe('.$a/.$z');
+    expect(mappedChildren[4].type).toBe('hr');
+    expect(mappedChildren[4].key).toBe('.$a/.5');
+
+    // false
+    expect(mappedChildren[5].type).toBe('span');
+    expect(mappedChildren[5].key).toBe('.1/.$x');
+    expect(mappedChildren[6].type).toBe('span');
+    expect(mappedChildren[6].key).toBe('.1/.$y');
+    expect(mappedChildren[7].type).toBe('hr');
+    expect(mappedChildren[7].key).toBe('.1/.5');
+
+    // <div key="b">
+    expect(mappedChildren[8].type).toBe('span');
+    expect(mappedChildren[8].key).toBe('.$b/.$x');
+    expect(mappedChildren[9].type).toBe('span');
+    expect(mappedChildren[9].key).toBe('.$b/.$y');
+    expect(mappedChildren[10].type).toBe('div');
+    expect(mappedChildren[10].key).toBe('.$b/.$b');
+    expect(mappedChildren[11].type).toBe('div');
+    expect(mappedChildren[11].key).toBe('.$b/.$z');
+    expect(mappedChildren[12].type).toBe('hr');
+    expect(mappedChildren[12].key).toBe('.$b/.5');
+
+    // <p>
+    expect(mappedChildren[13].type).toBe('span');
+    expect(mappedChildren[13].key).toBe('.3/.$x');
+    expect(mappedChildren[14].type).toBe('span');
+    expect(mappedChildren[14].key).toBe('.3/.$y');
+    expect(mappedChildren[15].type).toBe('p');
+    expect(mappedChildren[15].key).toBe('.3/.3');
+    expect(mappedChildren[16].type).toBe('p');
+    expect(mappedChildren[16].key).toBe('.3/.$z');
+    expect(mappedChildren[17].type).toBe('hr');
+    expect(mappedChildren[17].key).toBe('.3/.5');
+  });
+
   it('should throw on object', () => {
-    expect(function() {
-      React.Children.forEach({a: 1, b: 2}, function() {}, null);
+    expect(function () {
+      React.Children.forEach({a: 1, b: 2}, function () {}, null);
     }).toThrowError(
       'Objects are not valid as a React child (found: object with keys ' +
         '{a, b}).' +
@@ -882,8 +950,8 @@ describe('ReactChildren', () => {
   it('should throw on regex', () => {
     // Really, we care about dates (#4840) but those have nondeterministic
     // serialization (timezones) so let's test a regex instead:
-    expect(function() {
-      React.Children.forEach(/abc/, function() {}, null);
+    expect(function () {
+      React.Children.forEach(/abc/, function () {}, null);
     }).toThrowError(
       'Objects are not valid as a React child (found: /abc/).' +
         (__DEV__
@@ -903,15 +971,15 @@ describe('ReactChildren', () => {
 
       expect(() =>
         ReactTestUtils.renderIntoDocument(<ComponentReturningArray />),
-      ).toWarnDev(
+      ).toErrorDev(
         'Warning: ' +
           'Each child in a list should have a unique "key" prop.' +
-          ' See https://fb.me/react-warning-keys for more information.' +
+          ' See https://reactjs.org/link/warning-keys for more information.' +
           '\n    in ComponentReturningArray (at **)',
       );
     });
 
-    it('does not warn when there are keys on  elements in a fragment', () => {
+    it('does not warn when there are keys on elements in a fragment', () => {
       class ComponentReturningArray extends React.Component {
         render() {
           return [<div key="foo" />, <div key="bar" />];
@@ -924,10 +992,10 @@ describe('ReactChildren', () => {
     it('warns for keys for arrays at the top level', () => {
       expect(() =>
         ReactTestUtils.renderIntoDocument([<div />, <div />]),
-      ).toWarnDev(
+      ).toErrorDev(
         'Warning: ' +
           'Each child in a list should have a unique "key" prop.' +
-          ' See https://fb.me/react-warning-keys for more information.',
+          ' See https://reactjs.org/link/warning-keys for more information.',
         {withoutStack: true}, // There's nothing on the stack
       );
     });
